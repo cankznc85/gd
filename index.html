@@ -2,133 +2,286 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Flappy Bird - Mega Version</title>
+    <title>Efsane Flappy Bird</title>
     <style>
-        body { 
-            margin: 0; 
-            padding: 0; 
-            overflow: hidden; 
-            background: #111; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
+        body {
+            margin: 0;
+            background: #222; /* Koyu gri arka plan */
+            display: flex;
+            justify-content: center;
+            align-items: center;
             height: 100vh;
-            font-family: 'Arial Black', sans-serif;
+            overflow: hidden;
+            touch-action: manipulation; /* Mobil cihazlarda yakınlaştırmayı engeller */
         }
-        canvas { 
-            /* Ekranın boyuna göre kendini ayarlar */
-            height: 95vh; 
-            aspect-ratio: 9/16; 
-            background: linear-gradient(#4facfe, #00f2fe);
-            border: 5px solid #fff;
-            box-shadow: 0 0 50px rgba(0,0,0,0.8);
-            image-rendering: pixelated;
+        canvas {
+            background: #70c5ce; /* Gökyüzü rengi */
+            border: 8px solid #333; /* Kalın dış çerçeve */
+            box-shadow: 0 0 30px rgba(0,0,0,0.7);
+            border-radius: 10px; /* Hafif yuvarlak köşeler */
+            /* Canvas'ı daha yüksek çözünürlükte çizip, sonra CSS ile ölçekleyelim */
+            /* Bu, piksellerin büyük ve net görünmesini sağlar */
+            width: 90vw; /* Ekranın %90'ını kaplasın */
+            max-width: 450px; /* Maksimum genişlik */
+            aspect-ratio: 9/16; /* Dikey oyun oranı (Flappy Bird için ideal) */
+            image-rendering: pixelated; /* Pikselleri keskin tut */
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
         }
         #ui {
             position: absolute;
-            top: 50px;
+            top: 5%; /* Yukarıdan %5 boşluk */
+            left: 0;
+            right: 0;
             color: white;
-            font-size: 30px;
+            font-size: 28px; /* Daha büyük UI yazıları */
+            font-family: 'Press Start 2P', cursive; /* Piksel fontu için */
+            text-shadow: 3px 3px #000; /* Kalın gölge */
+            pointer-events: none; /* UI elemanları tıklanabilir olmasın */
             text-align: center;
-            width: 100%;
-            pointer-events: none;
-            text-shadow: 4px 4px 0px #000;
+            display: flex;
+            justify-content: center;
+            gap: 40px; /* Puan ve can arasına boşluk */
         }
+        /* Press Start 2P fontunu Google Fonts'tan çekelim */
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
     </style>
 </head>
 <body>
 
     <div id="ui">
-        <span id="score">PUAN: 0</span> | <span id="lives">CAN: ❤️❤️❤️</span>
+        SKOR: <span id="score">0</span> | CAN: <span id="lives">❤️❤️❤️</span>
     </div>
-    <canvas id="gameCanvas"></canvas>
+    <canvas id="game"></canvas>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+<script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
 
-        // Çözünürlüğü yüksek tutalım ki net görünsün
-        canvas.width = 1080; 
-        canvas.height = 1920;
+    // **Çok önemli:** Canvas'ı yüksek bir dahili çözünürlükte çiziyoruz
+    // CSS ile bu çözünürlüğü küçültünce pikseller net kalıyor.
+    canvas.width = 360 * 2; // 720 piksel genişlik
+    canvas.height = 640 * 2; // 1280 piksel yükseklik
 
-        let bird = { x: 200, y: 800, w: 100, h: 80, dy: 0 };
-        let gravity = 1.2;
-        let jump = -25;
-        let pipes = [];
-        let score = 0;
-        let lives = 3;
-        let frame = 0;
+    let bird = { x: 100, y: canvas.height / 2, w: 68, h: 48, dy: 0, frame: 0 }; // Kuşun boyutları büyüdü
+    let pipes = [];
+    let clouds = [];
+    let score = 0;
+    let lives = 3;
+    let gameSpeed = 4; // Oyun hızı da ayarlandı
+    let gravity = 0.5;
+    let jump = -10; // Zıplama gücü
 
-        function createPipe() {
-            let gap = 450; // Kocaman boşluk
-            let pipeY = Math.random() * (canvas.height - 1000) + 200;
-            pipes.push({ x: canvas.width, top: pipeY, bottom: pipeY + gap, passed: false });
+    // Arka plan bulutları oluştur
+    for(let i = 0; i < 5; i++) {
+        clouds.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * (canvas.height / 3), // Üst üçte birlik alanda
+            w: 120 + Math.random() * 80, // Bulut genişliği
+            h: 60 + Math.random() * 40,  // Bulut yüksekliği
+            s: Math.random() * 0.5 + 0.2 // Hız
+        });
+    }
+
+    // Kuşu çizim fonksiyonu
+    function drawBird() {
+        ctx.save();
+        ctx.translate(bird.x + bird.w / 2, bird.y + bird.h / 2);
+        // Kuşun hıza göre eğilmesi
+        let rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, bird.dy * 0.05));
+        ctx.rotate(rotation);
+
+        // Ana Gövde (daha detaylı piksel)
+        ctx.fillStyle = "#FFD700"; // Parlak sarı
+        ctx.fillRect(-bird.w / 2, -bird.h / 2, bird.w, bird.h);
+        ctx.fillStyle = "#FDD835"; // Gölge sarı
+        ctx.fillRect(-bird.w / 2 + 4, -bird.h / 2 + 4, bird.w - 8, bird.h - 8);
+
+        // Göz
+        ctx.fillStyle = "white";
+        ctx.fillRect(bird.w / 2 - 20, -bird.h / 2 + 10, 16, 16);
+        ctx.fillStyle = "black";
+        ctx.fillRect(bird.w / 2 - 16, -bird.h / 2 + 14, 8, 8);
+
+        // Gaga
+        ctx.fillStyle = "orange";
+        ctx.fillRect(bird.w / 2 + 4, -bird.h / 2 + 20, 24, 12);
+        ctx.fillStyle = "#FFC107"; // Gölge turuncu
+        ctx.fillRect(bird.w / 2 + 4, -bird.h / 2 + 22, 24, 8);
+
+        // Kanat (Animasyonlu)
+        let wingFrame = Math.floor(bird.frame / 5) % 3; // Kanat animasyonunu yavaşlat
+        let wingOffset = [0, 5, 0][wingFrame]; // Kanat yukarı/aşağı hareketi
+        ctx.fillStyle = "white";
+        ctx.fillRect(-bird.w / 2 - 10, -bird.h / 2 + 15 + wingOffset, 30, 15);
+        ctx.fillStyle = "#EEEEEE"; // Kanat gölgesi
+        ctx.fillRect(-bird.w / 2 - 8, -bird.h / 2 + 17 + wingOffset, 26, 11);
+
+        ctx.restore();
+        bird.frame++;
+    }
+
+    // Boru çizim fonksiyonu
+    function drawPipe(p) {
+        let pipeWidth = 104; // Boru genişliği
+        let capHeight = 40; // Boru başlığı yüksekliği
+
+        // Boru gövdesi
+        ctx.fillStyle = "#73bf2e"; // Açık yeşil boru
+        ctx.fillRect(p.x, 0, pipeWidth, p.top);
+        ctx.fillRect(p.x, p.bottom, pipeWidth, canvas.height);
+
+        // Boru gövdesi iç gölge
+        ctx.fillStyle = "#558022"; // Koyu yeşil gölge
+        ctx.fillRect(p.x + 8, 0, pipeWidth - 16, p.top);
+        ctx.fillRect(p.x + 8, p.bottom, pipeWidth - 16, canvas.height);
+
+        // Boru başlığı (üst)
+        ctx.fillStyle = "#558022"; // Koyu yeşil başlık
+        ctx.fillRect(p.x - 8, p.top - capHeight, pipeWidth + 16, capHeight);
+        ctx.fillStyle = "#46691c"; // Daha koyu başlık içi
+        ctx.fillRect(p.x - 4, p.top - capHeight + 4, pipeWidth + 8, capHeight - 8);
+
+        // Boru başlığı (alt)
+        ctx.fillStyle = "#558022"; // Koyu yeşil başlık
+        ctx.fillRect(p.x - 8, p.bottom, pipeWidth + 16, capHeight);
+        ctx.fillStyle = "#46691c"; // Daha koyu başlık içi
+        ctx.fillRect(p.x - 4, p.bottom + 4, pipeWidth + 8, capHeight - 8);
+    }
+
+    // Bulut çizim fonksiyonu
+    function drawCloud(c) {
+        ctx.fillStyle = "rgba(255,255,255,0.9)";
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.w / 2, Math.PI, Math.PI * 2);
+        ctx.arc(c.x + c.w * 0.4, c.y + c.h * 0.2, c.w / 2 * 0.8, 0, Math.PI * 2);
+        ctx.arc(c.x - c.w * 0.4, c.y + c.h * 0.2, c.w / 2 * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function update() {
+        bird.dy += gravity;
+        bird.y += bird.dy;
+
+        // Bulutları hareket ettir ve yeniden konumlandır
+        clouds.forEach(c => {
+            c.x -= c.s * gameSpeed * 0.2; // Bulutlar yavaş hareket etsin
+            if(c.x < -c.w) c.x = canvas.width + 50;
+        });
+
+        // Kuşun ekran sınırlarında kalmasını sağla
+        if (bird.y + bird.h > canvas.height - 100) { // Yere düşme (zemin yüksekliği 100)
+            bird.y = canvas.height - 100 - bird.h;
+            bird.dy = 0;
+            if (lives > 0) { // Sadece canı varsa bir can kaybetsin
+                lives--;
+                updateUI();
+                if (lives === 0) resetGame();
+            }
+        }
+        if (bird.y < 0) {
+            bird.y = 0;
+            bird.dy = 0;
         }
 
-        function update() {
-            bird.dy += gravity;
-            bird.y += bird.dy;
+        // Boru oluşturma sıklığı
+        if(frames % 120 === 0) {
+            let gap = 260; // Boru boşluğu
+            let top = Math.random() * (canvas.height - 100 - gap - 100) + 50; // Zemin ve tavanı göz önünde bulundur
+            pipes.push({x: canvas.width, top: top, bottom: top + gap, passed: false});
+        }
 
-            if (frame % 80 === 0) createPipe();
+        pipes.forEach((p, i) => {
+            p.x -= gameSpeed;
 
-            pipes.forEach((pipe, index) => {
-                pipe.x -= 10; // Hızı boyuta göre artırdım
-
-                // Çarpışma
-                if (bird.x + bird.w > pipe.x && bird.x < pipe.x + 150) {
-                    if (bird.y < pipe.top || bird.y + bird.h > pipe.bottom) {
+            let pipeWidth = 104; // Boru genişliği
+            // Çarpışma kontrolü (Kuşun etrafında biraz boşluk bırakarak)
+            if(bird.x + bird.w - 10 > p.x && bird.x + 10 < p.x + pipeWidth) {
+                if(bird.y + 10 < p.top || bird.y + bird.h - 10 > p.bottom) {
+                    if (lives > 0) { // Sadece canı varsa bir can kaybetsin
                         lives--;
-                        pipes.splice(index, 1);
-                        if (lives <= 0) resetGame();
-                        document.getElementById('lives').innerText = "CAN: " + "❤️".repeat(lives);
+                        pipes.splice(i, 1); // Çarpılan boruyu listeden çıkar
+                        if(lives === 0) resetGame();
+                        updateUI();
                     }
                 }
+            }
 
-                if (pipe.x + 150 < bird.x && !pipe.passed) {
-                    score++;
-                    pipe.passed = true;
-                    document.getElementById('score').innerText = "PUAN: " + score;
-                }
-            });
+            // Puan kazanma
+            if(p.x + pipeWidth < bird.x && !p.passed) {
+                score++;
+                p.passed = true;
+                updateUI();
+            }
+            // Ekran dışına çıkan boruları temizle
+            if(p.x < -pipeWidth) pipes.splice(i, 1);
+        });
+    }
 
-            if (bird.y > canvas.height || bird.y < 0) resetGame();
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Bulutları çiz
+        clouds.forEach(drawCloud);
+
+        // Boruları çiz
+        pipes.forEach(drawPipe);
+        
+        // Kuşu çiz
+        drawBird();
+        
+        // Zemin (Çim ve Toprak)
+        let groundHeight = 100;
+        ctx.fillStyle = "#ded895"; // Toprak rengi
+        ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
+        ctx.fillStyle = "#95c05a"; // Çim rengi
+        ctx.fillRect(0, canvas.height - groundHeight - 20, canvas.width, 20); // Daha kalın çim
+    }
+
+    // UI güncelleme fonksiyonu
+    function updateUI() {
+        document.getElementById('score').innerText = score;
+        document.getElementById('lives').innerText = "❤️".repeat(lives);
+    }
+
+    // Oyunu sıfırlama fonksiyonu
+    function resetGame() {
+        bird.y = canvas.height / 2;
+        bird.dy = 0;
+        pipes = [];
+        score = 0;
+        lives = 3;
+        frames = 0;
+        updateUI();
+    }
+
+    let frames = 0;
+    function loop() {
+        update();
+        draw();
+        frames++;
+        requestAnimationFrame(loop);
+    }
+
+    // Klavye ve dokunmatik kontroller
+    window.onkeydown = (e) => {
+        if(e.code === 'Space' || e.code === 'ArrowUp') {
+            bird.dy = jump;
         }
+    };
+    canvas.ontouchstart = (e) => {
+        e.preventDefault(); // Varsayılan dokunma hareketlerini engelle (yakınlaştırma gibi)
+        bird.dy = jump;
+    };
+    canvas.onmousedown = (e) => {
+        e.preventDefault(); // Fare tıklamasında da varsayılanları engelle
+        bird.dy = jump;
+    };
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Kuş (Sarı dev kütle)
-            ctx.fillStyle = "yellow";
-            ctx.fillRect(bird.x, bird.y, bird.w, bird.h);
-            ctx.fillStyle = "black";
-            ctx.fillRect(bird.x + 70, bird.y + 15, 15, 15); // Göz
-
-            // Borular (Neon Yeşil)
-            pipes.forEach(pipe => {
-                ctx.fillStyle = "#39ff14";
-                ctx.fillRect(pipe.x, 0, 150, pipe.top);
-                ctx.fillRect(pipe.x, pipe.bottom, 150, canvas.height);
-            });
-        }
-
-        function resetGame() {
-            bird.y = 800; bird.dy = 0;
-            pipes = []; score = 0; lives = 3;
-            document.getElementById('score').innerText = "PUAN: 0";
-            document.getElementById('lives').innerText = "CAN: ❤️❤️❤️";
-        }
-
-        function loop() {
-            update();
-            draw();
-            frame++;
-            requestAnimationFrame(loop);
-        }
-
-        window.addEventListener('keydown', (e) => { if(e.code === "Space") bird.dy = jump; });
-        canvas.addEventListener('touchstart', () => bird.dy = jump);
-
-        loop();
-    </script>
+    // Oyun başlangıcı
+    updateUI();
+    loop();
+</script>
 </body>
 </html>
